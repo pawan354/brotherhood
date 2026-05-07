@@ -7,15 +7,18 @@ const { protect } = require('../middleware/authMiddleware');
 async function sendOrderEmail(order) {
     try {
         const nodemailer = require('nodemailer');
+        const dns = require('dns');
         
         // Skip if Gmail credentials aren't set
         if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return;
 
-        // Force IPv4 resolution for Nodemailer (fixes Render ENETUNREACH IPv6 error)
-        require('dns').setDefaultResultOrder('ipv4first');
+        // Manually resolve IPv4 to completely bypass Render's broken IPv6 routing
+        const resolve4 = require('util').promisify(dns.resolve4);
+        const ipv4Addresses = await resolve4('smtp.gmail.com');
+        const smtpHost = ipv4Addresses[0];
 
         const transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
+            host: smtpHost,
             port: 465,
             secure: true,
             auth: {
@@ -23,6 +26,7 @@ async function sendOrderEmail(order) {
                 pass: process.env.GMAIL_APP_PASSWORD
             },
             tls: {
+                servername: 'smtp.gmail.com',
                 rejectUnauthorized: false
             }
         });

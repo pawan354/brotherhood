@@ -3,33 +3,17 @@ const router = express.Router();
 const Order = require('../models/Order');
 const { protect } = require('../middleware/authMiddleware');
 
-// Helper: try sending email via Nodemailer (Gmail SMTP)
+// Helper: try sending email via Resend API
 async function sendOrderEmail(order) {
     try {
-        const nodemailer = require('nodemailer');
-        const dns = require('dns');
+        const { Resend } = require('resend');
         
-        // Skip if Gmail credentials aren't set
-        if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return;
-
-        // Manually resolve IPv4 to completely bypass Render's broken IPv6 routing
-        const resolve4 = require('util').promisify(dns.resolve4);
-        const ipv4Addresses = await resolve4('smtp.gmail.com');
-        const smtpHost = ipv4Addresses[0];
-
-        const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: 465,
-            secure: true,
-            auth: {
-                user: process.env.GMAIL_USER,
-                pass: process.env.GMAIL_APP_PASSWORD
-            },
-            tls: {
-                servername: 'smtp.gmail.com',
-                rejectUnauthorized: false
-            }
-        });
+        // Use the provided API key or fallback to environment variable
+        const resendApiKey = process.env.RESEND_API_KEY || 're_YnqD6Krv_H4Tvcqo93uv632zmVG8Xinf9';
+        const resend = new Resend(resendApiKey);
+        
+        // Define sender: MUST be onboarding@resend.dev until custom domain is verified
+        const senderEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 
         const itemRows = order.items
             .map(i => `<tr>
@@ -43,63 +27,68 @@ async function sendOrderEmail(order) {
             .map(i => `- ${i.name} (Size: ${i.size || 'N/A'}) x${i.qty}`)
             .join('<br/>');
 
-        // Email to Customer
-        const customerMailOptions = {
-            from: `"BrotherHood" <${process.env.GMAIL_USER}>`,
+        // HTML Templates
+        const customerHtml = `
+            <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #ddd;border-radius:4px;overflow:hidden;">
+                <h2 style="background:#0A0F14;color:#C9A66B;padding:20px;margin:0;text-align:center;letter-spacing:2px;">BROTHERHOOD</h2>
+                <div style="padding:20px;">
+                    <p>Hi <strong>${order.customerName}</strong>,</p>
+                    <p>Thank you for choosing BrotherHood. Your bespoke order has been confirmed and is being prepared by our tailors.</p>
+                    <p><strong>Payment Ref:</strong> ${order.razorpayPaymentId || 'N/A'}</p>
+                    <hr style="border:0; border-top:1px solid #eee; margin:20px 0;"/>
+                    <table width="100%" style="border-collapse:collapse; text-align:left;">
+                        <thead>
+                            <tr style="background:#f9f9f9;">
+                                <th style="padding:10px 12px;">Item</th>
+                                <th style="padding:10px 12px;">Qty</th>
+                                <th style="padding:10px 12px;">Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>${itemRows}</tbody>
+                    </table>
+                    <hr style="border:0; border-top:1px solid #eee; margin:20px 0;"/>
+                    <h3 style="text-align:right; color:#0A0F14;">Total: ₹${order.totalAmount}</h3>
+                </div>
+            </div>
+        `;
+
+        const ownerHtml = `
+            <div style="font-family:sans-serif; padding: 20px;">
+                <h2>New Order Alert</h2>
+                <p><strong>Order From:</strong> ${order.customerName} (${order.customerEmail})</p>
+                <p><strong>Address:</strong> ${order.shippingAddress || 'N/A'}</p>
+                <hr/>
+                <h3>Ordered Products:</h3>
+                <p>${ownerItemRows}</p>
+                <hr/>
+                <p><strong>Total:</strong> ₹${order.totalAmount}</p>
+                <p><strong>Payment ID:</strong> ${order.razorpayPaymentId || 'N/A'}</p>
+            </div>
+        `;
+
+        // Send Email to Customer
+        const customerRes = await resend.emails.send({
+            from: `BrotherHood <${senderEmail}>`,
             to: order.customerEmail,
             subject: `🛍️ Order Confirmed! ₹${order.totalAmount} — BrotherHood`,
-            html: `
-                <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #ddd;border-radius:4px;overflow:hidden;">
-                    <h2 style="background:#0A0F14;color:#C9A66B;padding:20px;margin:0;text-align:center;letter-spacing:2px;">BROTHERHOOD</h2>
-                    <div style="padding:20px;">
-                        <p>Hi <strong>${order.customerName}</strong>,</p>
-                        <p>Thank you for choosing BrotherHood. Your bespoke order has been confirmed and is being prepared by our tailors.</p>
-                        <p><strong>Payment Ref:</strong> ${order.razorpayPaymentId || 'N/A'}</p>
-                        <hr style="border:0; border-top:1px solid #eee; margin:20px 0;"/>
-                        <table width="100%" style="border-collapse:collapse; text-align:left;">
-                            <thead>
-                                <tr style="background:#f9f9f9;">
-                                    <th style="padding:10px 12px;">Item</th>
-                                    <th style="padding:10px 12px;">Qty</th>
-                                    <th style="padding:10px 12px;">Price</th>
-                                </tr>
-                            </thead>
-                            <tbody>${itemRows}</tbody>
-                        </table>
-                        <hr style="border:0; border-top:1px solid #eee; margin:20px 0;"/>
-                        <h3 style="text-align:right; color:#0A0F14;">Total: ₹${order.totalAmount}</h3>
-                    </div>
-                </div>
-            `,
-        };
+            html: customerHtml,
+        });
+        if (customerRes.error) console.error('Resend Customer Error:', customerRes.error);
 
-        // Email to Owner
-        const ownerMailOptions = {
-            from: `"BrotherHood System" <${process.env.GMAIL_USER}>`,
-            to: process.env.OWNER_EMAIL,
-            subject: `🚨 NEW ORDER RECEIVED - ₹${order.totalAmount}`,
-            html: `
-                <div style="font-family:sans-serif; padding: 20px;">
-                    <h2>New Order Alert</h2>
-                    <p><strong>Order From:</strong> ${order.customerName} (${order.customerEmail})</p>
-                    <p><strong>Address:</strong> ${order.shippingAddress || 'N/A'}</p>
-                    <hr/>
-                    <h3>Ordered Products:</h3>
-                    <p>${ownerItemRows}</p>
-                    <hr/>
-                    <p><strong>Total:</strong> ₹${order.totalAmount}</p>
-                    <p><strong>Payment ID:</strong> ${order.razorpayPaymentId || 'N/A'}</p>
-                </div>
-            `
-        };
-
-        await transporter.sendMail(customerMailOptions);
+        // Send Email to Owner
         if (process.env.OWNER_EMAIL) {
-            await transporter.sendMail(ownerMailOptions);
+            const ownerRes = await resend.emails.send({
+                from: `BrotherHood System <${senderEmail}>`,
+                to: process.env.OWNER_EMAIL,
+                subject: `🚨 NEW ORDER RECEIVED - ₹${order.totalAmount}`,
+                html: ownerHtml,
+            });
+            if (ownerRes.error) console.error('Resend Owner Error:', ownerRes.error);
         }
-        console.log(`Order confirmation emails sent successfully.`);
+
+        console.log(`Order confirmation emails processed via Resend.`);
     } catch (err) {
-        console.error('Email send failed (non-fatal):', err.message);
+        console.error('Resend email failed (non-fatal):', err.message);
     }
 }
 

@@ -15,14 +15,20 @@ const allowedOrigins = [
     'http://localhost:4173',
 ];
 if (process.env.FRONTEND_URL) {
-    allowedOrigins.push(process.env.FRONTEND_URL);
+    allowedOrigins.push(process.env.FRONTEND_URL.trim());
 }
+
+console.log('✅ Allowed CORS origins:', allowedOrigins);
 
 app.use(cors({
     origin: function (origin, callback) {
         // Allow requests with no origin (e.g. curl, Postman, Render health checks)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) return callback(null, true);
+        // Exact match (trimmed to handle invisible whitespace)
+        if (allowedOrigins.includes(origin.trim())) return callback(null, true);
+        // Allow any brotherhood *.vercel.app URL (covers preview deployments too)
+        if (origin.includes('brotherhood') && origin.endsWith('.vercel.app')) return callback(null, true);
+        console.warn('CORS blocked origin:', origin);
         callback(new Error(`CORS: Origin ${origin} not allowed`));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

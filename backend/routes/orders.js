@@ -11,8 +11,13 @@ async function sendOrderEmail(order) {
         // Skip if Gmail credentials aren't set
         if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return;
 
+        // Force IPv4 resolution for Nodemailer (fixes Render ENETUNREACH IPv6 error)
+        require('dns').setDefaultResultOrder('ipv4first');
+
         const transporter = nodemailer.createTransport({
-            service: 'gmail',
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true,
             auth: {
                 user: process.env.GMAIL_USER,
                 pass: process.env.GMAIL_APP_PASSWORD

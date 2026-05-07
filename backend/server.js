@@ -1,4 +1,8 @@
 require('dotenv').config();
+
+// Force IPv4 globally for Render (fixes Nodemailer ENETUNREACH IPv6 errors)
+require('dns').setDefaultResultOrder('ipv4first');
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');

@@ -8,14 +8,21 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── CORS ─────────────────────────────────────────────────────────────────
-// FRONTEND_URL is set to your Vercel URL in production (e.g. https://brotherhood.vercel.app)
-// Falls back to allowing localhost for local development
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:4173',
+    // Custom domain variants (set CUSTOM_DOMAIN on Render for your domain)
+    'https://bthrhood.store',
+    'https://www.bthrhood.store',
+    'https://brotherhood.store',
+    'https://www.brotherhood.store',
 ];
 if (process.env.FRONTEND_URL) {
     allowedOrigins.push(process.env.FRONTEND_URL.trim());
+}
+if (process.env.CUSTOM_DOMAIN) {
+    allowedOrigins.push(`https://${process.env.CUSTOM_DOMAIN.trim()}`);
+    allowedOrigins.push(`https://www.${process.env.CUSTOM_DOMAIN.trim()}`);
 }
 
 console.log('✅ Allowed CORS origins:', allowedOrigins);
